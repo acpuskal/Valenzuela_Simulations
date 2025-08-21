@@ -1,0 +1,49 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+df = pd.read_csv('covid_19_clean_complete.csv')
+df['Country/Region'] = df['Country/Region'].str.strip()
+
+daily_df = (
+    df[df['Country/Region'] == 'Philippines']
+    .groupby('Date')[['Confirmed', 'Deaths', 'Recovered']].sum().reset_index()
+)
+daily_df['Date'] = pd.to_datetime(daily_df['Date'], errors='coerce')
+daily_df = daily_df.dropna(subset=['Date']).sort_values('Date')
+
+daily_df['Active'] = daily_df['Confirmed'] - daily_df['Deaths'] - daily_df['Recovered']
+
+def monte_carlo_cases(data, future_days=30, sims=500):
+    daily_increase = data.diff().clip(lower=0).dropna()
+    mean, std = daily_increase.mean(), daily_increase.std()
+    results = []
+    for _ in range(sims):
+        future = np.random.normal(mean, std, future_days).clip(min=0)
+        cumulative = data.iloc[-1] + np.cumsum(future)
+        results.append(cumulative)
+    return np.array(results)
+
+future_days = 30
+sims = monte_carlo_cases(daily_df['Confirmed'], future_days=future_days, sims=1000)
+
+forecast = np.percentile(sims, [5, 50, 95], axis=0)
+
+plt.figure(figsize=(14, 8))
+plt.plot(daily_df['Date'], daily_df['Confirmed'], label='Confirmed', color='blue')
+plt.plot(daily_df['Date'], daily_df['Deaths'], label='Deaths', color='red')
+plt.plot(daily_df['Date'], daily_df['Recovered'], label='Recovered', color='green')
+plt.plot(daily_df['Date'], daily_df['Active'], label='Active', color='orange')
+
+
+future_dates = pd.date_range(daily_df['Date'].max(), periods=future_days+1)[1:]
+plt.plot(future_dates, forecast[1], label='Median Forecast (Confirmed)', color='purple')
+plt.fill_between(future_dates, forecast[0], forecast[2], color='purple', alpha=0.3, label='90% CI (Confirmed)')
+
+plt.title('COVID-19 Philippines: Confirmed, Deaths, Recovered, Active, and Forecast')
+plt.xlabel('Date')
+plt.ylabel('Count')
+plt.legend()
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
